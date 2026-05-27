@@ -1,36 +1,82 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# LLMWatch Observability Platform
+
+LLMWatch is a production-grade LLM observability platform designed for tracking, monitoring, and debugging LLM application chains, agents, and prompts. It supports parent-child nested tracing (spans), latency profiling, token usage/cost estimation, and caching analysis.
+
+## Features
+
+- **Hierarchical Tracing & Spans**: Visualize complex agentic runs and nested tool calls in a clean, interactive tree structure.
+- **Latency & Performance Profiling**: Drill down into exact runtimes and pinpoint bottlenecks.
+- **Token & Cost Tracking**: Estimate prompt, completion, and total costs across different models.
+- **Developer-Friendly SDKs**: Support for both Python (context managers) and TypeScript (builder pattern).
+- **Beautiful Dashboard**: Built with Next.js, featuring dark-mode styling, rich charts, and responsive layouts.
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- Node.js v18+
+- PostgreSQL database (e.g. Neon Serverless Postgres)
+
+### Installation
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/MithunVimalan/llm-watch.git
+   cd llm-watch
+   ```
+
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+
+3. Set up environment variables in `.env.local`:
+   ```env
+   DATABASE_URL="your-postgresql-connection-string"
+   MOCK_AUTH="true"
+   CRON_SECRET="your-secret-cron-key"
+   ```
+
+4. Run the database migration:
+   ```bash
+   node migrate-local.js
+   ```
+
+5. Start the development server:
+   ```bash
+   npm run dev
+   ```
+
+Open [http://localhost:3000](http://localhost:3000) to view the dashboard.
+
+## SDK Usage
+
+### Python SDK
+```python
+from sdk.llmwatch import LLMWatch
+
+sdk = LLMWatch(api_key="your-api-key", project_id="your-project-id")
+
+with sdk.trace("Agent Main Run") as trace:
+    with trace.span("Database Query", span_type="tool") as db_span:
+        # Perform DB operation...
+        db_span.track(response_payload={"rows": 4})
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### TypeScript SDK
+```typescript
+import { LLMWatch } from "@/sdk/llmwatch";
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+const sdk = new LLMWatch({ apiKey: "your-api-key", projectId: "your-project-id" });
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+const trace = sdk.trace("Agent Main Run");
+const dbSpan = trace.span("Database Query", { spanType: "tool" });
 
-## Learn More
+// Perform DB operation...
+dbSpan.end({ responsePayload: { rows: 4 } });
+trace.end();
+```
 
-To learn more about Next.js, take a look at the following resources:
+## License
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
