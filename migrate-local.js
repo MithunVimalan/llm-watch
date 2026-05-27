@@ -3,7 +3,18 @@ const { Pool } = require('pg');
 const fs = require('fs');
 const path = require('path');
 
-const connectionString = "postgresql://neondb_owner:npg_IQlsnt84uJmp@ep-mute-art-apxsoyq5-pooler.c-7.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require";
+function getConnectionString() {
+  if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
+  const envPath = path.join(__dirname, '.env.local');
+  if (fs.existsSync(envPath)) {
+    const content = fs.readFileSync(envPath, 'utf8');
+    const match = content.match(/^DATABASE_URL\s*=\s*["']?(.*?)["']?$/m);
+    if (match && match[1]) return match[1].trim();
+  }
+  throw new Error('DATABASE_URL is not set in environment or .env.local');
+}
+
+const connectionString = getConnectionString();
 
 const pool = new Pool({
   connectionString,

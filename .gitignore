@@ -41,3 +41,7 @@ yarn-error.log*
 next-env.d.ts
 
 .vercel
+
+# temporary helper files
+get-creds.bat
+upload-env.js
