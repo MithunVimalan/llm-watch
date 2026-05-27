@@ -45,3 +45,5 @@ next-env.d.ts
 # temporary helper files
 get-creds.bat
 upload-env.js
+rotate-db-pass.js
+upload-new-db-url.js
