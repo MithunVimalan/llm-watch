@@ -8,24 +8,92 @@ To break the loop and spike some dopamine before starting the work week, this pr
 
 ---
 
-## What is GuiltTrip?
+## Conceptual Overview
 
 GuiltTrip is an observability and tracing engine built specifically for hierarchical, stateful, and multi-agent LLM architectures. 
 
-### For the Noob (The 10-Second Pitch)
-Imagine your AI agents are a group of hyperactive interns working on a project. They talk to each other, hand off tasks, write notes in shared folders, and sometimes get stuck waiting on each other forever. 
-GuiltTrip is the security camera and manager. It lets you watch exactly who said what, when they said it, how much it cost you, and rings an alarm if two interns get stuck in a loop waiting on each other.
+When building agentic applications, AI agents act as independent entities that communicate, delegate tasks, execute tool calls, and access external databases. Because these chains run asynchronously and recursively, developers often struggle to understand the exact sequence of events, token usage, and latencies. 
 
-### For the 30-Year Veteran (The Architecture Breakdown)
-Traditional APMs assume flat request-response workflows. GuiltTrip is designed for nested, stateful call graphs:
-*   **Context Propagation**: It enforces parent-child span boundaries across distributed traces using a unified `workflow_id` and unique `Span` coordinates.
-*   **Asynchronous Edge Ingestion**: Telemetry payloads are ingested via Edge Routes, authenticated via SHA-256 key matches, and written asynchronously using Next.js `after()` workers. Malformed payloads are routed to a Dead Letter Queue (DLQ).
-*   **DFS Deadlock Detection**: A server-side depth-first search (DFS) algorithm traces cross-agent edges to identify circular waits (cycles) in real-time.
-*   **State Snapshot Diffing**: Mutated variables are versioned, letting you view side-by-side recursive JSON diffs and dry-run fork replays.
+GuiltTrip provides complete visibility into these runs. It acts as an inspection layer, tracking the flow of data between coordinating agents, profiling run times and costs, and automatically alerting you if agents enter recursive waiting loops.
 
 ---
 
-## How It Works: The 10 Phases of GuiltTrip
+## Detailed System Architecture
+
+The GuiltTrip platform is engineered using a decoupled, five-tier architecture designed to support high-throughput telemetry ingestion, low-overhead tracing, and visual execution mapping.
+
+```
++-------------------------------------------------------------+
+|                     Telemetry SDK Layer                     |
+|           (Python context / TypeScript builders)            |
++------------------------------+------------------------------+
+                               |
+                   HTTP POST   | (Asynchronous Queue Buffer)
+                               v
++-------------------------------------------------------------+
+|                    Edge Ingestion Gateway                   |
+|         (API Auth / Payload Validation / Edge API)          |
++------------------------------+------------------------------+
+                               |
+            Next.js after()    | (Decoupled Background Task)
+                               v
++-------------------------------------------------------------+
+|                    Database & Storage Layer                 |
+|             (Neon Serverless Postgres / Indexing)           |
++------------------------------+------------------------------+
+            |                  |                  |
+            |                  |                  |
+            v                  v                  v
++---------------+      +---------------+      +---------------+
+|    Traces &   |      |   Anomalies   |      |  Dead Letter  |
+|  Spans Tables |      |  Alerts Table |      |  Queue (DLQ)  |
++---------------+      +---------------+      +---------------+
+            ^                  ^                  ^
+            |                  |                  |
+            +------------------+------------------+
+                               |
+                               | (Server Actions / Direct Queries)
+                               v
++-------------------------------------------------------------+
+|                 Web Inspection UI & Dashboard               |
+|       (Visual SVG DAGs / Flamegraphs / State diff panels)    |
++-------------------------------------------------------------+
+```
+
+### 1. Telemetry SDK Layer (Python & TypeScript)
+The SDKs provide lightweight instrumentation APIs to wrap agent execution paths.
+*   **Hierarchical Span Telemetry**: Spans are initialized using context managers in Python (`with sdk.trace()`) or builders in TypeScript. Each span is assigned a unique UUID v4. Spans carry context propagation variables (`trace_id`, `parent_span_id`) which are automatically inherited by sub-spans to form execution trees.
+*   **Non-Blocking Daemon Queue**: Telemetry events are buffered in an in-memory queue and processed by a daemon worker thread. This ensures that network calls to the ingestion API do not block the main application thread.
+*   **Exponential Backoff Retries**: If network requests fail, the SDK retry mechanism attempts redelivery up to 3 times, scaling delays exponentially (1s, 2s, capped at 8s) to tolerate transient network issues.
+*   **Input Key Hashing**: Request payloads are recursively hashed to create deterministic cache keys. The SDK queries the remote cache to identify cache hits, which are logged as zero-cost, low-latency telemetry events.
+
+### 2. Edge Ingestion Gateway
+The edge API endpoint (`/api/public/v1/events`) acts as the entry point for telemetry data.
+*   **Cryptographic Key Verification**: Inbound bearer tokens are processed using a secure SHA-256 hashing function (`hashIncomingKey`). The hash is compared against the database to authenticate the request, check tenant isolation bounds, and enforce monthly project quota limits.
+*   **Payload Validation**: Batch payloads are validated against the event schema. Batches containing structural errors are immediately isolated and sent to the database Dead Letter Queue (DLQ) to prevent database exceptions.
+*   **Asynchronous Processing Context**: The gateway responds to the SDK immediately with an HTTP 202 Accepted status. Database insertions, pricing catalog matching, and anomaly checks are executed asynchronously inside Next.js `after()` handlers.
+
+### 3. Relational Storage Layer
+The database layer is hosted on Neon Serverless PostgreSQL and is optimized for tree-query traversals and search performance.
+*   **Schema Constraints**: Spans are stored in the `events` table, which supports indexing across `trace_id` and `parent_span_id` columns. Foreign key constraints enforce referential integrity with cascading updates and deletions.
+*   **GIN Full-Text Indexes**: Raw request and response payloads are indexed via a PostgreSQL GIN index. This index supports rapid full-text search queries across JSON properties using `websearch_to_tsquery`.
+*   **Dead Letter Queue (DLQ)**: The `ingestion_dead_letter` table isolates malformed payloads, keeping the main telemetry database clean.
+
+### 4. Background Anomaly Scanner
+As soon as a batch of events is ingested, the background scanner analyzes trace timelines and hierarchies.
+*   **Recursive Loop Detection**: The scanner traverses trace nodes and flags instances where duplicate chains or tool calls exceed 5 occurrences, indicating infinite loops.
+*   **Cost & Latency Outliers**: Spans are compared against project averages. Spans exceeding 2000ms and 3x the average latency, or total trace costs exceeding 0.10 USD, trigger alert logging to the `anomalies` table.
+*   **Live Layout Synchronization**: Real-time anomalies update database state, synchronizing the active anomalies count badges across user dashboards.
+
+### 5. Web Inspection UI & Dashboard
+The dashboard interface is built using Next.js Server Components and interactive client-side React panels.
+*   **Direct Server Actions**: Queries are handled by authenticated Server Actions, which check user credentials and workspace authorization before executing database queries.
+*   **Dynamic SVG Layout Coordinate Algorithms**: The system maps span execution order and dependency relationships to coordinate grids. It draws SVG charts, visual timeline heatmaps (flamegraphs), and curved edge pathways with animated flow markers.
+*   **Split-Pane Diff Viewer**: State snapshot checkpoints are rendered side-by-side. A recursive tree comparison algorithm compares nested JSON values, styling added keys green, removed keys red, and mutated keys yellow.
+
+---
+
+## The 10 Phases of GuiltTrip
 
 The platform was built in ten iterative phases:
 
