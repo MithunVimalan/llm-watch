@@ -8,6 +8,7 @@ import ReplayViewer from './ReplayViewer';
 import FlameGraph from './FlameGraph';
 import DAGView from './DAGView';
 import TokenFlow from './TokenFlow';
+import StateDiff from './StateDiff';
 
 interface Trace {
   id: string;
@@ -212,7 +213,7 @@ export default function TraceList({ traces, projectId, initialSearch }: TraceLis
   const [replayTraceId, setReplayTraceId] = useState<string | null>(null);
   const [showReplay, setShowReplay] = useState(false);
   const [loadingReplay, setLoadingReplay] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<'tree' | 'dag' | 'flame' | 'tokens'>('tree');
+  const [viewMode, setViewMode] = useState<'tree' | 'dag' | 'flame' | 'tokens' | 'state'>('tree');
 
   const handleOpenReplay = (trace: Trace) => {
     if (!trace.trace_id) return;
@@ -538,6 +539,14 @@ export default function TraceList({ traces, projectId, initialSearch }: TraceLis
                     >
                       Tokens
                     </button>
+                    <button
+                      onClick={() => setViewMode('state')}
+                      className={`px-2 py-1 rounded text-[9px] font-bold uppercase tracking-wider transition-all cursor-pointer ${
+                        viewMode === 'state' ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-500 hover:text-zinc-350'
+                      }`}
+                    >
+                      State
+                    </button>
                   </div>
                   <span className="text-[9.5px] font-mono text-zinc-500 bg-zinc-900/60 border border-zinc-850 px-2 py-0.5 rounded">
                     {traceSpans.length} {traceSpans.length === 1 ? 'span' : 'spans'}
@@ -566,6 +575,8 @@ export default function TraceList({ traces, projectId, initialSearch }: TraceLis
                   />
                 ) : viewMode === 'tokens' ? (
                   <TokenFlow spans={traceSpans} />
+                ) : viewMode === 'state' ? (
+                  <StateDiff spans={traceSpans} />
                 ) : (
                   <div className="space-y-1.5 flex-1">
                     {buildTree(traceSpans).map(rootNode => (
