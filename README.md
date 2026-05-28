@@ -1,88 +1,105 @@
 # LLMWatch: State-of-the-Art LLM Observability & Multi-Agent Tracing
 
-Standard tracing platforms are great for flat API calls, but they fall apart when you're building complex, stateful, multi-agent systems. When agents start calling other agents, spawning tools, fork-executing prompt runs, or getting stuck in recursive deadlock loops, you need more than just a list of request logs. 
+Traditional application performance monitoring (APM) tools are built around linear, flat request-response cycles. These models fail when applied to complex, stateful, multi-agent LLM systems. When agents recursively invoke other agents, spawn intermediate tool calls, fork execution paths, or get stuck in circular wait deadlock loops, flat log viewers cannot provide the necessary context.
 
-We built **LLMWatch** to give developers complete, step-by-step visibility into agentic runs. It’s a production-grade LLM observability platform featuring step-by-step trace replay, execution DAG flow diagrams, context waste alerts, state mutation diffs, and circular wait deadlock detection.
-
----
-
-## 🛠️ The 10 Phases of LLMWatch
-
-We built LLMWatch iteratively, layer-by-layer, to ensure reliability at scale. Here’s a map of how the platform evolved:
-
-### 1. Phase 1: Core Tracing & Profiling Setup
-The foundation. We designed the nested trace structure (`spans`), calculated relative latencies, and wrote cost-estimation models to parse prompt and completion weights across different providers.
-
-### 2. Phase 2: Multi-Project & Secure Key Auth
-Built project-isolation layers. We implemented API key management, hashing incoming keys using secure SHA-256 signatures, and isolating trace event streams between multiple teams and environments.
-
-### 3. Phase 3: Bulk Event Ingestion Route
-Constructed a high-throughput, bulk-event POST API route. We implemented DB schema migrations and a fallback Dead Letter Queue (DLQ) to isolate and inspect malformed telemetry payloads without interrupting ingestion.
-
-### 4. Phase 4: Basic Tracing Dashboard
-Created our responsive dark-mode Next.js UI. Features include an interactive nested tree inspector, full-text search indexing across raw request/response JSON payloads, and aggregate cost charts.
-
-### 5. Phase 6: Interactive Execution DAG & Latency Flamegraphs
-Replaced static logs with visual execution maps. We drew SVG graphs with animated, pulsing data flow lines and timeline offset heatmaps to highlight long-running tasks. *(Wait, why is Phase 6 here? It naturally pairs with the UI visualization layer!)*
-
-### 6. Phase 5: Trace Replay Engine
-Built a step-by-step trace player. Developers can pause, play, or drag a timeline slider to reconstruct execution sequences exactly as they happened in production.
-
-### 7. Phase 7: Token Flow & RAG Optimization
-Added Cumulative Token Growth charts and HSL source-distribution bars. It alerts you when massive prompts result in tiny outputs (Context Waste) so you can optimize RAG retrievals.
-
-### 8. Phase 8: Real-Time Anomaly Scanners
-Automated quality guardrails. Using Next.js `after()` workers, the backend scans ingested traces for anomalies: Cost Explosions (> $0.10), Infinite Loops (> 5 duplicate calls), Retry Storms, and Latency Outliers.
-
-### 9. Phase 9: State Snapshot Timeline & Diff Inspector
-Added split-pane JSON diffing to trace how agent memory mutated over time. Includes a "Fork Checkpoint" modal containing cURL commands and Python SDK snippets to instantly test and simulate code changes at any specific run step.
-
-### 10. Phase 10: Multi-Agent Correlation & Deadlock Detection
-Links coordinating traces across agent boundaries using a single `workflow_id`. Draws an SVG agent dependency graph and detects circular wait loops (Deadlocks), highlighting the cycle in a glowing, animated red path.
+LLMWatch is a production-grade LLM observability platform engineered specifically for tracking, debugging, and profiling agentic runs. It provides developers with step-by-step trace replay capabilities, interactive execution DAG flow diagrams, context waste profiling, split-pane state mutation diffs, and distributed deadlock detection across agent execution boundaries.
 
 ---
 
-## 🚀 How to Run LLMWatch Locally
+## System Architecture
 
-Setting up LLMWatch is straightforward. You'll need:
-*   **Node.js** (v18+)
-*   **PostgreSQL Database** (We highly recommend [Neon Serverless Postgres](https://neon.tech/))
-*   **Python** (v3.8+) for running verification test scripts
+The LLMWatch platform is composed of five core architectural layers, designed for low latency, secure tenant isolation, and high availability.
 
-### 1. Clone & Install Dependencies
-```bash
-git clone https://github.com/MithunVimalan/llm-watch.git
-cd llm-watch
-npm install
-```
+### 1. Telemetry & SDK Layer
+The Python and TypeScript SDKs intercept model execution pipelines. They wrap API calls (such as OpenAI completions), profiling duration, cost, and tokens.
+*   **Span Hierarchy**: The SDK dynamically creates Span contexts using UUID v4. Spans carry parent-child mapping variables (`trace_id`, `parent_span_id`) which are automatically inherited by nested blocks (e.g. chains calling tools).
+*   **Asynchronous Buffered Queue**: Telemetry events are queued locally and flushed in batches using thread-safe daemon worker threads. This prevents network latency overhead in the main application loop. It features exponential backoff retries (1s, 2s, capped at 8s) to handle network interruptions.
+*   **Local Caching**: Deterministic hashing of prompt input keys is used to query remote caches, enabling zero-cost cache hit telemetry tracking.
 
-### 2. Configure Environment
-Create a `.env.local` file in the project root:
-```env
-DATABASE_URL="postgresql://user:pass@ep-host.pooler.region.neon.tech/dbname?sslmode=require"
-MOCK_AUTH="true"
-CRON_SECRET="your-cron-auth-secret-key"
-```
+### 2. Ingestion Backend
+Built on Next.js Edge Routes, the ingestion API endpoint (/api/public/v1/events) accepts batched event arrays.
+*   **Secure API Key Authentication**: Projects authenticate via incoming API keys, which are hashed using SHA-256 and matched against db keys to enforce tenant isolation and monthly usage quotas.
+*   **Decoupled Processing**: Next.js `after()` execution context executes database writes, token pricing lookups, and anomaly detection checks asynchronously after the HTTP 202 Accepted response has been sent to the SDK.
+*   **Dead Letter Queue (DLQ)**: Telemetry batches containing invalid structures or SQL insertion failures are captured and logged to the `ingestion_dead_letter` table for post-mortem debugging.
 
-### 3. Run Database Migrations
-Run our schema migrator to build tables, columns, indexes, and seeded project profiles:
-```bash
-node migrate-local.js
-```
+### 3. Data Storage Layer
+Uses Neon Serverless PostgreSQL to store traces, spans, anomalies, projects, and api keys.
+*   **Schema Design**: The database schema uses relational constraints, cascades, and composite indexes to query complex nested hierarchies.
+*   **Full-Text Search Indexing**: Request and response payloads are indexed via a PostgreSQL GIN index, enabling full-text searches across raw JSON telemetry fields using `websearch_to_tsquery`.
 
-### 4. Start LLMWatch Server
-```bash
-npm run dev
-```
-Open [http://localhost:3000](http://localhost:3000) in your browser. You can immediately access the dashboard without login setup (thanks to `MOCK_AUTH=true`).
+### 4. Background Anomaly Scanner
+A background post-ingestion scanner analyzes incoming traces in real-time. It flags traces matching specific anomaly signatures:
+*   **Cost Explosions**: Total trace cost exceeding 0.10 USD.
+*   **Recursive Loops**: Duplicate tool or chain spans appearing more than 5 times in a single trace, indicating loop failures.
+*   **Retry Storms**: Repeated failed calls to external APIs or databases.
+*   **Latency Outliers**: Active LLM execution spans exceeding 2000ms and 3x the project average.
+
+### 5. Web Inspection Interface
+Built with Next.js Server Components, Client Components, and Server Actions.
+*   **Direct Server Actions**: Actions handle database queries with user authentication and workspace authorization checks.
+*   **SVG Rendering Canvas**: Custom SVG coordinates math dynamically positions nodes horizontally in execution DAGs and workflow dependency maps, drawing animated data flow lines and curved edges.
+*   **Recursive Diff trees**: Client-side tree algorithms compare nested JSON configurations, highlighting added, removed, or changed values.
 
 ---
 
-## 🧪 Seeding & Verification Scripts
+## Development Phases
 
-We've written Python scripts to seed the database and simulate production environments. Run these in separate terminals to populate your dashboard with data:
+LLMWatch was developed in ten sequential phases to ensure structural stability:
 
-*   **Trace Replays & Timelines**:
+*   **Phase 1: Basic Tracing & Cost Profiling Core**: Nested span telemetry schema, Cost-per-1k-tokens mapping across different LLM providers (OpenAI, Anthropic, etc.), and duration tracking.
+*   **Phase 2: Project Management & API Authentication**: Multi-project database isolation, secure key validation using SHA-256 key hashing, and tenant usage quota enforcement.
+*   **Phase 3: Real-Time Ingestion Backend**: Bulk event handler API routes, database schema migrations, and local/production environment setups.
+*   **Phase 4: Inspection Dashboard & Tree Inspector**: Next.js dashboard layout, interactive tree viewer showing span execution hierarchy, and full-text JSON payload search.
+*   **Phase 5: Step-Through Replay Engine**: Sequence order indexing on spans, timeline playback slider controls, and intermediate agent reasoning extraction.
+*   **Phase 6: Interactive Execution DAG & Latency Flamegraphs**: Relative timeline flamegraph offsets, canvas grid coordinates logic, and animated SVG flow paths.
+*   **Phase 7: Context Flow & RAG Optimization**: HSL-mapped token source charts, cumulative growth line charts, and context-waste optimization thresholds.
+*   **Phase 8: Anomaly Scanners & Alerts**: Real-time scanners run post-ingestion inside `after()` hooks, flagging infinite loops, cost outliers, and retry storms.
+*   **Phase 9: State Snapshot Timeline & Compare Diff Inspector**: Split-pane JSON recursive diff trees, state mutations timeline, and fork checkpoint simulation command builders.
+*   **Phase 10: Multi-Agent Correlation & Deadlock Detection**: Distributed workflow correlation using a `workflow_id` context, SVG agent dependency graphs, and server-side DFS cycle-detection path builders to isolate deadlocks.
+
+---
+
+## System Requirements & Local Setup
+
+### Prerequisites
+*   Node.js (v18 or higher)
+*   PostgreSQL Database (Neon Serverless Postgres recommended)
+*   Python (v3.8 or higher) for verification script execution
+
+### Local Installation
+
+1. Clone the repository and install npm packages:
+   ```bash
+   git clone https://github.com/MithunVimalan/llm-watch.git
+   cd llm-watch
+   npm install
+   ```
+
+2. Create a `.env.local` file in the project root:
+   ```env
+   DATABASE_URL="postgresql://user:pass@ep-host.pooler.region.neon.tech/dbname?sslmode=require"
+   MOCK_AUTH="true"
+   CRON_SECRET="your-cron-auth-secret-key"
+   ```
+
+3. Run database migrations to build tables, columns, indexes, and seed records:
+   ```bash
+   node migrate-local.js
+   ```
+
+4. Start the local Next.js development server:
+   ```bash
+   npm run dev
+   ```
+   Open http://localhost:3000 to access the dashboard.
+
+---
+
+## Verification & Seeding
+
+We have provided several Python scripts in the root directory to generate trace data and test specific features. Run them to seed your database:
+
+*   **State Snapshots & Replays**:
     ```bash
     python test-replay.py
     ```
@@ -90,52 +107,44 @@ We've written Python scripts to seed the database and simulate production enviro
     ```bash
     python test-token-flow.py
     ```
-*   **Anomalies & Recursive Loops**:
+*   **Loop & Cost Anomalies**:
     ```bash
     python test-anomalies.py
     ```
-*   **Coordinated Agents & Deadlock Cycles**:
+*   **Coordinated Agents & Deadlocks**:
     ```bash
     python test-multi-agent.py
     ```
 
 ---
 
-## 🌍 Production Deployment Guide
+## Production Deployment Guide
 
-Deploying LLMWatch to production takes under five minutes.
+Deploy LLMWatch to a production server in under five minutes using the Vercel CLI.
 
-### What You'll Need
+### Prerequisites
 1.  A Vercel account.
-2.  A production PostgreSQL instance (Neon is perfect because of its serverless scale).
-3.  Vercel CLI installed on your machine (`npm install -g vercel`).
+2.  A production PostgreSQL instance.
+3.  Vercel CLI installed globally (`npm install -g vercel`).
 
-### Deployment Steps (CMD / Terminal)
+### Deployment Steps
 
-1.  **Log in to Vercel**:
+1.  Log in to Vercel and link your repository:
     ```bash
     vercel login
-    ```
-2.  **Link your project**:
-    ```bash
     vercel link
     ```
-    Select your scope and choose "Yes" to link to the existing project.
-3.  **Add environment variables on Vercel**:
+2.  Add production environment variables:
     ```bash
     vercel env add DATABASE_URL
     vercel env add CRON_SECRET
     ```
-    *Ensure you input your production PostgreSQL string for `DATABASE_URL`.*
-4.  **Run production migration**:
-    To initialize your production DB, edit your connection string locally to target production temporarily and run:
+3.  Run migrations on your production database. Edit your local `DATABASE_URL` temporarily to point to the production database and run:
     ```bash
     node migrate-local.js
     ```
-5.  **Build and Deploy**:
-    Deploy directly to Vercel production:
+4.  Compile and deploy your production build:
     ```bash
     vercel --prod
     ```
-
-Vercel will output a live URL (e.g., `https://llmwatch.vercel.app`). Update your SDK endpoints to point to `https://your-domain.vercel.app/api/public/v1/events` and you're good to go!
+    This command outputs your live dashboard URL (e.g. `https://llmwatch.vercel.app`). Update your SDK endpoints to target `https://your-domain.vercel.app/api/public/v1/events`.
