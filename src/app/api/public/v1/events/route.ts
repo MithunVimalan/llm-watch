@@ -224,11 +224,13 @@ export async function POST(req: Request) {
           event.duration_breakdown ? JSON.stringify(event.duration_breakdown) : null,
           event.token_breakdown ? JSON.stringify(event.token_breakdown) : null,
           event.context_window_used || null,
-          event.context_window_max || null
+          event.context_window_max || null,
+          event.agent_id || null,
+          event.workflow_id || null
         );
 
         const rowPlaceholders = [];
-        for (let j = 0; j < 27; j++) {
+        for (let j = 0; j < 29; j++) {
           rowPlaceholders.push(`$${paramIndex++}`);
         }
         placeholders.push(`(${rowPlaceholders.join(', ')})`);
@@ -259,7 +261,8 @@ export async function POST(req: Request) {
         error_message, is_cached, request_payload, response_payload,
         trace_id, parent_span_id, span_type, span_name,
         execution_order, state_snapshot, reasoning_text, duration_breakdown,
-        token_breakdown, context_window_used, context_window_max
+        token_breakdown, context_window_used, context_window_max,
+        agent_id, workflow_id
       ) VALUES ${placeholders.join(', ')}
       ON CONFLICT (project_id, idempotency_key) DO NOTHING
       RETURNING id;
@@ -290,8 +293,9 @@ export async function POST(req: Request) {
               error_message, is_cached, request_payload, response_payload,
               trace_id, parent_span_id, span_type, span_name,
               execution_order, state_snapshot, reasoning_text, duration_breakdown,
-              token_breakdown, context_window_used, context_window_max
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
+              token_breakdown, context_window_used, context_window_max,
+              agent_id, workflow_id
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29)
             ON CONFLICT (project_id, idempotency_key) DO NOTHING;
           `, [
             eventId,
@@ -320,7 +324,9 @@ export async function POST(req: Request) {
             event.duration_breakdown ? JSON.stringify(event.duration_breakdown) : null,
             event.token_breakdown ? JSON.stringify(event.token_breakdown) : null,
             event.context_window_used || null,
-            event.context_window_max || null
+            event.context_window_max || null,
+            event.agent_id || null,
+            event.workflow_id || null
           ]);
         } catch (dbError: any) {
           try {

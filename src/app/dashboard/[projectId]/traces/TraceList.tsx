@@ -1,7 +1,7 @@
 // src/app/dashboard/[projectId]/traces/TraceList.tsx
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { getTraceTree } from '@/actions/traces';
 import ReplayViewer from './ReplayViewer';
@@ -9,6 +9,8 @@ import FlameGraph from './FlameGraph';
 import DAGView from './DAGView';
 import TokenFlow from './TokenFlow';
 import StateDiff from './StateDiff';
+import WorkflowGraph from './WorkflowGraph';
+import { getWorkflowTraces } from '@/actions/workflows';
 
 interface Trace {
   id: string;
@@ -31,6 +33,8 @@ interface Trace {
   state_snapshot?: any;
   reasoning_text?: string | null;
   duration_breakdown?: any;
+  agent_id?: string | null;
+  workflow_id?: string | null;
 }
 
 interface TraceListProps {
@@ -213,7 +217,43 @@ export default function TraceList({ traces, projectId, initialSearch }: TraceLis
   const [replayTraceId, setReplayTraceId] = useState<string | null>(null);
   const [showReplay, setShowReplay] = useState(false);
   const [loadingReplay, setLoadingReplay] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<'tree' | 'dag' | 'flame' | 'tokens' | 'state'>('tree');
+  const [viewMode, setViewMode] = useState<'tree' | 'dag' | 'flame' | 'tokens' | 'state' | 'workflow'>('tree');
+  const [workflowTraces, setWorkflowTraces] = useState<Trace[]>([]);
+  const [loadingWorkflowTraces, setLoadingWorkflowTraces] = useState(false);
+
+  useEffect(() => {
+    if (selectedTrace?.workflow_id && viewMode === 'workflow') {
+      setLoadingWorkflowTraces(true);
+      getWorkflowTraces(projectId, selectedTrace.workflow_id)
+        .then((res: any[]) => {
+          if (res) {
+            const mapped = res.map((row: any) => ({
+              id: row.id,
+              created_at: typeof row.created_at === 'string' ? row.created_at : row.created_at.toISOString ? row.created_at.toISOString() : new Date(row.created_at).toISOString(),
+              provider: row.provider || 'unknown',
+              model: row.model,
+              latency_ms: row.latency_ms,
+              cost_usd: row.cost_usd ? Number(row.cost_usd) : null,
+              error_message: row.error_message,
+              is_cached: !!row.is_cached,
+              prompt_tokens: row.prompt_tokens || 0,
+              completion_tokens: row.completion_tokens || 0,
+              request_payload: row.request_payload,
+              response_payload: row.response_payload,
+              trace_id: row.trace_id,
+              parent_span_id: row.parent_span_id,
+              span_type: row.span_type,
+              span_name: row.span_name,
+              agent_id: row.agent_id,
+              workflow_id: row.workflow_id
+            }));
+            setWorkflowTraces(mapped);
+          }
+        })
+        .catch((err) => console.error("Error loading workflow traces:", err))
+        .finally(() => setLoadingWorkflowTraces(false));
+    }
+  }, [projectId, selectedTrace?.workflow_id, viewMode]);
 
   const handleOpenReplay = (trace: Trace) => {
     if (!trace.trace_id) return;
@@ -241,7 +281,9 @@ export default function TraceList({ traces, projectId, initialSearch }: TraceLis
             execution_order: row.execution_order,
             state_snapshot: row.state_snapshot,
             reasoning_text: row.reasoning_text,
-            duration_breakdown: row.duration_breakdown
+            duration_breakdown: row.duration_breakdown,
+            agent_id: row.agent_id,
+            workflow_id: row.workflow_id
           }));
           setReplayTraceSpans(mapped);
           setReplayTraceId(trace.trace_id!);
@@ -297,7 +339,9 @@ export default function TraceList({ traces, projectId, initialSearch }: TraceLis
               execution_order: row.execution_order,
               state_snapshot: row.state_snapshot,
               reasoning_text: row.reasoning_text,
-              duration_breakdown: row.duration_breakdown
+              duration_breakdown: row.duration_breakdown,
+              agent_id: row.agent_id,
+              workflow_id: row.workflow_id
             }));
             setTraceSpans(mapped);
             // Focus on root or first node
@@ -547,6 +591,16 @@ export default function TraceList({ traces, projectId, initialSearch }: TraceLis
                     >
                       State
                     </button>
+                    {selectedTrace?.workflow_id && (
+                      <button
+                        onClick={() => setViewMode('workflow')}
+                        className={`px-2 py-1 rounded text-[9px] font-bold uppercase tracking-wider transition-all cursor-pointer ${
+                          viewMode === 'workflow' ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-500 hover:text-zinc-350'
+                        }`}
+                      >
+                        Workflow
+                      </button>
+                    )}
                   </div>
                   <span className="text-[9.5px] font-mono text-zinc-500 bg-zinc-900/60 border border-zinc-850 px-2 py-0.5 rounded">
                     {traceSpans.length} {traceSpans.length === 1 ? 'span' : 'spans'}
@@ -577,6 +631,70 @@ export default function TraceList({ traces, projectId, initialSearch }: TraceLis
                   <TokenFlow spans={traceSpans} />
                 ) : viewMode === 'state' ? (
                   <StateDiff spans={traceSpans} />
+                ) : viewMode === 'workflow' ? (
+                  <div className="space-y-5 flex-1 flex flex-col">
+                    {/* Workflow visual graph canvas */}
+                    {selectedTrace.workflow_id && (
+                      <WorkflowGraph
+                        projectId={projectId}
+                        workflowId={selectedTrace.workflow_id}
+                      />
+                    )}
+
+                    {/* Workflow Traces List links */}
+                    <div className="space-y-2 border-t border-zinc-800 pt-4 flex-1">
+                      <h5 className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider font-mono">
+                        Traces in this Workflow
+                      </h5>
+                      {loadingWorkflowTraces ? (
+                        <div className="flex items-center space-x-2 text-zinc-600 font-mono text-[9px] py-4">
+                          <svg className="animate-spin h-3.5 w-3.5" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                          </svg>
+                          <span>Loading workflow traces...</span>
+                        </div>
+                      ) : (
+                        <div className="space-y-1.5 overflow-y-auto max-h-[250px] pr-1">
+                          {workflowTraces.map((wTrace) => {
+                            const isCurrentTrace = wTrace.trace_id === selectedTrace.trace_id;
+                            const hasError = !!wTrace.error_message;
+                            return (
+                              <div
+                                key={wTrace.id}
+                                onClick={() => handleSelectTrace(wTrace)}
+                                className={`group p-2.5 rounded-lg border transition-all cursor-pointer flex flex-col space-y-1 ${
+                                  isCurrentTrace
+                                    ? 'bg-zinc-850 border-zinc-700 shadow-md text-zinc-100'
+                                    : 'bg-zinc-900/60 border-zinc-850 hover:border-zinc-800 text-zinc-400 hover:text-zinc-200'
+                                }`}
+                              >
+                                <div className="flex items-center justify-between text-[10px] font-mono font-semibold">
+                                  <span className="truncate max-w-[180px]">
+                                    {wTrace.span_name || wTrace.model || 'Agent Trace'}
+                                  </span>
+                                  <span className="text-[8px] text-zinc-500 font-normal">
+                                    {wTrace.latency_ms ? `${wTrace.latency_ms}ms` : '—'}
+                                  </span>
+                                </div>
+                                <div className="flex items-center justify-between text-[8px] font-mono">
+                                  <span className="text-zinc-600">
+                                    Agent: <span className="text-zinc-500 font-bold">{wTrace.agent_id || 'unknown'}</span>
+                                  </span>
+                                  <div className="flex items-center gap-1">
+                                    {hasError && (
+                                      <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                                    )}
+                                    <span className="text-zinc-500">{wTrace.model}</span>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 ) : (
                   <div className="space-y-1.5 flex-1">
                     {buildTree(traceSpans).map(rootNode => (

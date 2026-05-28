@@ -38,7 +38,9 @@ export default async function TracesPage({ params, searchParams }: PageProps) {
     trace_id: row.trace_id,
     parent_span_id: row.parent_span_id,
     span_type: row.span_type,
-    span_name: row.span_name
+    span_name: row.span_name,
+    agent_id: row.agent_id,
+    workflow_id: row.workflow_id
   }));
 
   return (

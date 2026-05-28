@@ -10,7 +10,7 @@ import urllib.request
 import urllib.error
 
 class Span:
-    def __init__(self, sdk, name, span_type="llm", trace_id=None, parent_span_id=None, execution_counter=None):
+    def __init__(self, sdk, name, span_type="llm", trace_id=None, parent_span_id=None, execution_counter=None, agent_id=None, workflow_id=None):
         self.sdk = sdk
         self.name = name
         self.type = span_type
@@ -19,6 +19,8 @@ class Span:
         self.parent_span_id = parent_span_id
         self.start_time = time.time()
         self.ended = False
+        self.agent_id = agent_id
+        self.workflow_id = workflow_id
         self._state_snapshot = None
         self._reasoning_text = None
         self._duration_breakdown = None
@@ -34,8 +36,14 @@ class Span:
         self.execution_order = self.execution_counter[0]
         self.execution_counter[0] += 1
 
-    def span(self, name, span_type="llm"):
-        return Span(self.sdk, name, span_type=span_type, trace_id=self.trace_id, parent_span_id=self.id, execution_counter=self.execution_counter)
+    def span(self, name, span_type="llm", agent_id=None, workflow_id=None):
+        return Span(
+            self.sdk, name, span_type=span_type, 
+            trace_id=self.trace_id, parent_span_id=self.id, 
+            execution_counter=self.execution_counter,
+            agent_id=agent_id or self.agent_id,
+            workflow_id=workflow_id or self.workflow_id
+        )
 
     def capture_state(self, state_dict):
         self._state_snapshot = state_dict
@@ -70,6 +78,10 @@ class Span:
             "model": data.get("model", "unknown"),
             "execution_order": self.execution_order,
         }
+        if self.agent_id is not None:
+            event["agent_id"] = self.agent_id
+        if self.workflow_id is not None:
+            event["workflow_id"] = self.workflow_id
         if self._state_snapshot is not None:
             event["state_snapshot"] = self._state_snapshot
         if self._reasoning_text is not None:
@@ -124,9 +136,9 @@ class LLMWatch:
         # Ensure queue drains cleanly on process shutdown
         atexit.register(self.close)
 
-    def trace(self, name, span_type="agent", trace_id=None):
+    def trace(self, name, span_type="agent", trace_id=None, parent_span_id=None, agent_id=None, workflow_id=None):
         """Create a root tracking trace (returns a Span)."""
-        return Span(self, name, span_type=span_type, trace_id=trace_id, parent_span_id=None)
+        return Span(self, name, span_type=span_type, trace_id=trace_id, parent_span_id=parent_span_id, agent_id=agent_id, workflow_id=workflow_id)
 
     def track(self, event):
         """Track custom telemetry events."""

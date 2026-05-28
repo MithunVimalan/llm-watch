@@ -16,7 +16,7 @@ export async function searchTraces(projectId: string, searchTerm: string = '', l
           request_payload, response_payload, trace_id, parent_span_id,
           span_type, span_name, execution_order, state_snapshot,
           reasoning_text, duration_breakdown, token_breakdown,
-          context_window_used, context_window_max
+          context_window_used, context_window_max, agent_id, workflow_id
         FROM events 
         WHERE project_id = $1 
         ORDER BY created_at DESC 
@@ -32,7 +32,7 @@ export async function searchTraces(projectId: string, searchTerm: string = '', l
         request_payload, response_payload, trace_id, parent_span_id,
         span_type, span_name, execution_order, state_snapshot,
         reasoning_text, duration_breakdown, token_breakdown,
-        context_window_used, context_window_max
+        context_window_used, context_window_max, agent_id, workflow_id
       FROM events 
       WHERE project_id = $1 
         AND to_tsvector('english', COALESCE(request_payload::text, '') || ' ' || COALESCE(response_payload::text, '')) 
@@ -53,7 +53,7 @@ export async function getTraceTree(projectId: string, traceId: string) {
         request_payload, response_payload, trace_id, parent_span_id,
         span_type, span_name, execution_order, state_snapshot,
         reasoning_text, duration_breakdown, token_breakdown,
-        context_window_used, context_window_max
+        context_window_used, context_window_max, agent_id, workflow_id
       FROM events 
       WHERE project_id = $1 AND trace_id = $2
       ORDER BY execution_order ASC, created_at ASC

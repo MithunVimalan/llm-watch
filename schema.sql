@@ -200,3 +200,9 @@ CREATE TABLE IF NOT EXISTS anomalies (
 );
 CREATE INDEX IF NOT EXISTS idx_anomalies_project ON anomalies(project_id, detected_at DESC);
 CREATE INDEX IF NOT EXISTS idx_anomalies_trace ON anomalies(trace_id);
+
+-- 14. Events Table Multi-Agent Correlation (Phase 10)
+ALTER TABLE events ADD COLUMN IF NOT EXISTS agent_id VARCHAR(255);
+ALTER TABLE events ADD COLUMN IF NOT EXISTS workflow_id VARCHAR(255);
+CREATE INDEX IF NOT EXISTS idx_events_workflow ON events(workflow_id);
+CREATE INDEX IF NOT EXISTS idx_events_agent ON events(agent_id);

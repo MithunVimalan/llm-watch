@@ -47,6 +47,8 @@ export interface TrackEvent {
   };
   context_window_used?: number;
   context_window_max?: number;
+  agent_id?: string;
+  workflow_id?: string;
   [key: string]: any;
 }
 
@@ -95,6 +97,8 @@ export class Span {
   private tokenBreakdownVal?: any;
   private contextWindowUsed?: number;
   private contextWindowMax?: number;
+  public agentId?: string;
+  public workflowId?: string;
 
   constructor(
     sdk: LLMWatch,
@@ -102,7 +106,9 @@ export class Span {
     type: 'llm' | 'tool' | 'chain' | 'agent' = 'llm',
     traceId?: string,
     parentSpanId: string | null = null,
-    executionCounter?: { count: number }
+    executionCounter?: { count: number },
+    agentId?: string,
+    workflowId?: string
   ) {
     this.sdk = sdk;
     this.name = name;
@@ -113,10 +119,21 @@ export class Span {
     this.startTime = Date.now();
     this.executionCounter = executionCounter || { count: 0 };
     this.executionOrder = this.executionCounter.count++;
+    this.agentId = agentId;
+    this.workflowId = workflowId;
   }
 
-  public span(name: string, options?: { spanType?: 'llm' | 'tool' | 'chain' | 'agent' }): Span {
-    return new Span(this.sdk, name, options?.spanType || 'llm', this.traceId, this.id, this.executionCounter);
+  public span(name: string, options?: { spanType?: 'llm' | 'tool' | 'chain' | 'agent'; agentId?: string; workflowId?: string }): Span {
+    return new Span(
+      this.sdk,
+      name,
+      options?.spanType || 'llm',
+      this.traceId,
+      this.id,
+      this.executionCounter,
+      options?.agentId || this.agentId,
+      options?.workflowId || this.workflowId
+    );
   }
 
   public captureState(state: any): Span {
@@ -161,6 +178,8 @@ export class Span {
       token_breakdown: this.tokenBreakdownVal,
       context_window_used: this.contextWindowUsed,
       context_window_max: this.contextWindowMax,
+      agent_id: this.agentId,
+      workflow_id: this.workflowId,
       ...data
     };
     this.sdk.track(event);
@@ -196,8 +215,17 @@ export class LLMWatch {
     }
   }
 
-  public trace(name: string, options?: { spanType?: 'llm' | 'tool' | 'chain' | 'agent'; traceId?: string }): Span {
-    return new Span(this, name, options?.spanType || 'agent', options?.traceId || generateUUID(), null);
+  public trace(name: string, options?: { spanType?: 'llm' | 'tool' | 'chain' | 'agent'; traceId?: string; parentSpanId?: string; agentId?: string; workflowId?: string }): Span {
+    return new Span(
+      this, 
+      name, 
+      options?.spanType || 'agent', 
+      options?.traceId || generateUUID(), 
+      options?.parentSpanId || null, 
+      undefined, 
+      options?.agentId, 
+      options?.workflowId
+    );
   }
 
   public track(event: TrackEvent) {
