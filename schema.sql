@@ -185,3 +185,18 @@ ALTER TABLE events ADD COLUMN IF NOT EXISTS duration_breakdown JSONB;
 ALTER TABLE events ADD COLUMN IF NOT EXISTS token_breakdown JSONB;
 ALTER TABLE events ADD COLUMN IF NOT EXISTS context_window_used INT;
 ALTER TABLE events ADD COLUMN IF NOT EXISTS context_window_max INT;
+
+-- 13. Anomalies Table Migrations (Phase 8)
+CREATE TABLE IF NOT EXISTS anomalies (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    trace_id VARCHAR(255) NOT NULL,
+    anomaly_type VARCHAR(50) NOT NULL,  -- 'recursive_loop', 'cost_explosion', 'retry_storm', 'latency_outlier'
+    severity VARCHAR(20) DEFAULT 'warning',  -- 'info', 'warning', 'critical'
+    description TEXT,
+    metadata JSONB,
+    detected_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(trace_id, anomaly_type)
+);
+CREATE INDEX IF NOT EXISTS idx_anomalies_project ON anomalies(project_id, detected_at DESC);
+CREATE INDEX IF NOT EXISTS idx_anomalies_trace ON anomalies(trace_id);

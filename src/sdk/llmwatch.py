@@ -59,6 +59,7 @@ class Span:
         return self
 
     def track(self, **data):
+        self.ended = True
         event = {
             "idempotency_key": self.id,
             "trace_id": self.trace_id,
@@ -155,16 +156,19 @@ class LLMWatch:
                 except queue.Empty:
                     event = None
 
-                # Flush if max batch size reached, or interval timer expired
-                if self.queue.qsize() >= self.max_batch_size or (time.time() - last_flush_time >= self.flush_interval_seconds):
-                    self.flush()
+                # Flush if we have an event, if queue is not empty, or if interval expired
+                if event is not None or not self.queue.empty() or (time.time() - last_flush_time >= self.flush_interval_seconds):
+                    self.flush(initial_event=event)
                     last_flush_time = time.time()
             except Exception as e:
                 print(f"[LLMWatch] Internal worker exception: {e}")
 
-    def flush(self):
+    def flush(self, initial_event=None):
         """Drains the buffer and posts events in batches with exponential backoff retries."""
         batch = []
+        if initial_event is not None:
+            batch.append(initial_event)
+
         while not self.queue.empty() and len(batch) < self.max_batch_size:
             try:
                 batch.append(self.queue.get_nowait())

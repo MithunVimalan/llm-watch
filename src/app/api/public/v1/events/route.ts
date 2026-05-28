@@ -3,6 +3,7 @@ import { NextResponse, after } from 'next/server';
 import { db } from '@/lib/db';
 import { hashIncomingKey } from '@/lib/crypto';
 import { randomUUID } from 'crypto';
+import { scanTracesForAnomalies } from '@/lib/anomalies-scanner';
 
 // In-memory cache for models pricing catalog (5-min TTL)
 let pricingCache: Record<string, { prompt: number; completion: number }> | null = null;
@@ -336,6 +337,19 @@ export async function POST(req: Request) {
             console.error('Fatal: Failed to write to DLQ during fallback', dlqErr);
           }
         }
+      }
+    }
+
+    // Run real-time anomaly scanning on all processed traces
+    const uniqueTraceIds = Array.from(
+      new Set(validEvents.map(e => e.trace_id).filter(Boolean))
+    ) as string[];
+
+    if (uniqueTraceIds.length > 0) {
+      try {
+        await scanTracesForAnomalies(project.id, uniqueTraceIds);
+      } catch (scanErr) {
+        console.error('Failed to run real-time anomaly scan:', scanErr);
       }
     }
   });
