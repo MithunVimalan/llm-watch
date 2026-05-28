@@ -36,6 +36,17 @@ export interface TrackEvent {
     overhead_ms?: number;
     [key: string]: any;
   };
+  token_breakdown?: {
+    system_prompt?: number;
+    user_input?: number;
+    rag_context?: number;
+    memory?: number;
+    function_defs?: number;
+    other?: number;
+    [key: string]: any;
+  };
+  context_window_used?: number;
+  context_window_max?: number;
   [key: string]: any;
 }
 
@@ -81,6 +92,9 @@ export class Span {
   private stateSnapshot?: any;
   private reasoningText?: string;
   private durationBreakdownVal?: any;
+  private tokenBreakdownVal?: any;
+  private contextWindowUsed?: number;
+  private contextWindowMax?: number;
 
   constructor(
     sdk: LLMWatch,
@@ -120,6 +134,17 @@ export class Span {
     return this;
   }
 
+  public tokenBreakdown(breakdown: any): Span {
+    this.tokenBreakdownVal = breakdown;
+    return this;
+  }
+
+  public contextWindow(used: number, maxTokens?: number): Span {
+    this.contextWindowUsed = used;
+    this.contextWindowMax = maxTokens;
+    return this;
+  }
+
   public track(data: Partial<TrackEvent>) {
     const event: TrackEvent = {
       idempotency_key: this.id,
@@ -133,6 +158,9 @@ export class Span {
       state_snapshot: this.stateSnapshot,
       reasoning_text: this.reasoningText,
       duration_breakdown: this.durationBreakdownVal,
+      token_breakdown: this.tokenBreakdownVal,
+      context_window_used: this.contextWindowUsed,
+      context_window_max: this.contextWindowMax,
       ...data
     };
     this.sdk.track(event);

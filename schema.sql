@@ -180,3 +180,8 @@ ALTER TABLE events ADD COLUMN IF NOT EXISTS execution_order INT DEFAULT 0;
 ALTER TABLE events ADD COLUMN IF NOT EXISTS state_snapshot JSONB;
 ALTER TABLE events ADD COLUMN IF NOT EXISTS reasoning_text TEXT;
 ALTER TABLE events ADD COLUMN IF NOT EXISTS duration_breakdown JSONB;
+
+-- 12. Events Table Token Flow Migrations (Phase 7)
+ALTER TABLE events ADD COLUMN IF NOT EXISTS token_breakdown JSONB;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS context_window_used INT;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS context_window_max INT;

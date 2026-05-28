@@ -22,6 +22,9 @@ class Span:
         self._state_snapshot = None
         self._reasoning_text = None
         self._duration_breakdown = None
+        self._token_breakdown = None
+        self._context_window_used = None
+        self._context_window_max = None
 
         if execution_counter is None:
             self.execution_counter = [0]
@@ -46,6 +49,15 @@ class Span:
         self._duration_breakdown = breakdown
         return self
 
+    def token_breakdown(self, breakdown):
+        self._token_breakdown = breakdown
+        return self
+
+    def context_window(self, used, max_tokens=None):
+        self._context_window_used = used
+        self._context_window_max = max_tokens
+        return self
+
     def track(self, **data):
         event = {
             "idempotency_key": self.id,
@@ -63,6 +75,12 @@ class Span:
             event["reasoning_text"] = self._reasoning_text
         if self._duration_breakdown is not None:
             event["duration_breakdown"] = self._duration_breakdown
+        if self._token_breakdown is not None:
+            event["token_breakdown"] = self._token_breakdown
+        if self._context_window_used is not None:
+            event["context_window_used"] = self._context_window_used
+        if self._context_window_max is not None:
+            event["context_window_max"] = self._context_window_max
 
         event.update(data)
         self.sdk.track(event)
