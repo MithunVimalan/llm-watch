@@ -174,3 +174,9 @@ ALTER TABLE events ADD COLUMN IF NOT EXISTS span_type VARCHAR(50) DEFAULT 'llm';
 ALTER TABLE events ADD COLUMN IF NOT EXISTS span_name VARCHAR(255);
 
 CREATE INDEX IF NOT EXISTS idx_events_trace_id ON events(trace_id);
+
+-- 11. Events Table Execution Replay Migrations (Phase 5)
+ALTER TABLE events ADD COLUMN IF NOT EXISTS execution_order INT DEFAULT 0;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS state_snapshot JSONB;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS reasoning_text TEXT;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS duration_breakdown JSONB;

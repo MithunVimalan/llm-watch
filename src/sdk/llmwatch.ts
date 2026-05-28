@@ -26,6 +26,16 @@ export interface TrackEvent {
   parent_span_id?: string;
   span_type?: 'llm' | 'tool' | 'chain' | 'agent';
   span_name?: string;
+  execution_order?: number;
+  state_snapshot?: any;
+  reasoning_text?: string;
+  duration_breakdown?: {
+    queue_ms?: number;
+    model_ms?: number;
+    tool_ms?: number;
+    overhead_ms?: number;
+    [key: string]: any;
+  };
   [key: string]: any;
 }
 
@@ -66,13 +76,19 @@ export class Span {
   public type: 'llm' | 'tool' | 'chain' | 'agent';
   private sdk: LLMWatch;
   private startTime: number;
+  private executionCounter: { count: number };
+  public executionOrder: number;
+  private stateSnapshot?: any;
+  private reasoningText?: string;
+  private durationBreakdownVal?: any;
 
   constructor(
     sdk: LLMWatch,
     name: string,
     type: 'llm' | 'tool' | 'chain' | 'agent' = 'llm',
     traceId?: string,
-    parentSpanId: string | null = null
+    parentSpanId: string | null = null,
+    executionCounter?: { count: number }
   ) {
     this.sdk = sdk;
     this.name = name;
@@ -81,10 +97,27 @@ export class Span {
     this.traceId = traceId || generateUUID();
     this.parentSpanId = parentSpanId;
     this.startTime = Date.now();
+    this.executionCounter = executionCounter || { count: 0 };
+    this.executionOrder = this.executionCounter.count++;
   }
 
   public span(name: string, options?: { spanType?: 'llm' | 'tool' | 'chain' | 'agent' }): Span {
-    return new Span(this.sdk, name, options?.spanType || 'llm', this.traceId, this.id);
+    return new Span(this.sdk, name, options?.spanType || 'llm', this.traceId, this.id, this.executionCounter);
+  }
+
+  public captureState(state: any): Span {
+    this.stateSnapshot = state;
+    return this;
+  }
+
+  public reasoning(text: string): Span {
+    this.reasoningText = text;
+    return this;
+  }
+
+  public durationBreakdown(breakdown: any): Span {
+    this.durationBreakdownVal = breakdown;
+    return this;
   }
 
   public track(data: Partial<TrackEvent>) {
@@ -96,6 +129,10 @@ export class Span {
       span_name: this.name,
       provider: data.provider || 'unknown',
       model: data.model || 'unknown',
+      execution_order: this.executionOrder,
+      state_snapshot: this.stateSnapshot,
+      reasoning_text: this.reasoningText,
+      duration_breakdown: this.durationBreakdownVal,
       ...data
     };
     this.sdk.track(event);

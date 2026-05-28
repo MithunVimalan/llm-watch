@@ -31,16 +31,17 @@ async function run() {
         span_name, 
         span_type, 
         trace_id, 
-        parent_span_id, 
+        execution_order,
+        state_snapshot,
+        reasoning_text,
+        duration_breakdown,
         latency_ms,
-        cost_usd,
-        error_message,
         created_at
       FROM events 
       ORDER BY created_at DESC 
       LIMIT 10
     `);
-    console.table(res.rows);
+    console.log(JSON.stringify(res.rows, null, 2));
   } catch (err) {
     console.error('Query error:', err.message);
   } finally {

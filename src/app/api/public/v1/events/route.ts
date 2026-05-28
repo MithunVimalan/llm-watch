@@ -216,11 +216,15 @@ export async function POST(req: Request) {
           event.trace_id || null,
           event.parent_span_id || null,
           event.span_type || 'llm',
-          event.span_name || null
+          event.span_name || null,
+          event.execution_order || 0,
+          event.state_snapshot ? JSON.stringify(event.state_snapshot) : null,
+          event.reasoning_text || null,
+          event.duration_breakdown ? JSON.stringify(event.duration_breakdown) : null
         );
 
         const rowPlaceholders = [];
-        for (let j = 0; j < 20; j++) {
+        for (let j = 0; j < 24; j++) {
           rowPlaceholders.push(`$${paramIndex++}`);
         }
         placeholders.push(`(${rowPlaceholders.join(', ')})`);
@@ -249,7 +253,8 @@ export async function POST(req: Request) {
         id, project_id, idempotency_key, request_id, prompt_hash, customer_identifier, 
         provider, model, prompt_tokens, completion_tokens, cost_usd, latency_ms, 
         error_message, is_cached, request_payload, response_payload,
-        trace_id, parent_span_id, span_type, span_name
+        trace_id, parent_span_id, span_type, span_name,
+        execution_order, state_snapshot, reasoning_text, duration_breakdown
       ) VALUES ${placeholders.join(', ')}
       ON CONFLICT (project_id, idempotency_key) DO NOTHING
       RETURNING id;
@@ -278,8 +283,9 @@ export async function POST(req: Request) {
               id, project_id, idempotency_key, request_id, prompt_hash, customer_identifier, 
               provider, model, prompt_tokens, completion_tokens, cost_usd, latency_ms, 
               error_message, is_cached, request_payload, response_payload,
-              trace_id, parent_span_id, span_type, span_name
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+              trace_id, parent_span_id, span_type, span_name,
+              execution_order, state_snapshot, reasoning_text, duration_breakdown
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
             ON CONFLICT (project_id, idempotency_key) DO NOTHING;
           `, [
             eventId,
@@ -301,7 +307,11 @@ export async function POST(req: Request) {
             event.trace_id || null,
             event.parent_span_id || null,
             event.span_type || 'llm',
-            event.span_name || null
+            event.span_name || null,
+            event.execution_order || 0,
+            event.state_snapshot ? JSON.stringify(event.state_snapshot) : null,
+            event.reasoning_text || null,
+            event.duration_breakdown ? JSON.stringify(event.duration_breakdown) : null
           ]);
         } catch (dbError: any) {
           try {

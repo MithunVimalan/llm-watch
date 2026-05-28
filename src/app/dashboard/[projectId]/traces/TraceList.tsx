@@ -4,6 +4,7 @@
 import React, { useState } from 'react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { getTraceTree } from '@/actions/traces';
+import ReplayViewer from './ReplayViewer';
 
 interface Trace {
   id: string;
@@ -22,6 +23,10 @@ interface Trace {
   parent_span_id?: string | null;
   span_type?: 'llm' | 'tool' | 'chain' | 'agent' | null;
   span_name?: string | null;
+  execution_order?: number | null;
+  state_snapshot?: any;
+  reasoning_text?: string | null;
+  duration_breakdown?: any;
 }
 
 interface TraceListProps {
@@ -200,6 +205,52 @@ export default function TraceList({ traces, projectId, initialSearch }: TraceLis
   const [loadingSpans, setLoadingSpans] = useState(false);
   const [activeSpanId, setActiveSpanId] = useState<string | null>(null);
 
+  const [replayTraceSpans, setReplayTraceSpans] = useState<Trace[] | null>(null);
+  const [replayTraceId, setReplayTraceId] = useState<string | null>(null);
+  const [showReplay, setShowReplay] = useState(false);
+  const [loadingReplay, setLoadingReplay] = useState<string | null>(null);
+
+  const handleOpenReplay = (trace: Trace) => {
+    if (!trace.trace_id) return;
+    setLoadingReplay(trace.id);
+    getTraceTree(projectId, trace.trace_id)
+      .then((res: any[]) => {
+        if (res && res.length > 0) {
+          const mapped = res.map((row: any) => ({
+            id: row.id,
+            created_at: typeof row.created_at === 'string' ? row.created_at : row.created_at.toISOString ? row.created_at.toISOString() : new Date(row.created_at).toISOString(),
+            provider: row.provider,
+            model: row.model,
+            latency_ms: row.latency_ms,
+            cost_usd: row.cost_usd ? Number(row.cost_usd) : null,
+            error_message: row.error_message,
+            is_cached: row.is_cached,
+            prompt_tokens: row.prompt_tokens || 0,
+            completion_tokens: row.completion_tokens || 0,
+            request_payload: row.request_payload,
+            response_payload: row.response_payload,
+            trace_id: row.trace_id,
+            parent_span_id: row.parent_span_id,
+            span_type: row.span_type,
+            span_name: row.span_name,
+            execution_order: row.execution_order,
+            state_snapshot: row.state_snapshot,
+            reasoning_text: row.reasoning_text,
+            duration_breakdown: row.duration_breakdown
+          }));
+          setReplayTraceSpans(mapped);
+          setReplayTraceId(trace.trace_id!);
+          setShowReplay(true);
+        }
+      })
+      .catch((err) => {
+        console.error("Error loading trace replay", err);
+      })
+      .finally(() => {
+        setLoadingReplay(null);
+      });
+  };
+
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const params = new URLSearchParams(searchParams.toString());
@@ -237,7 +288,11 @@ export default function TraceList({ traces, projectId, initialSearch }: TraceLis
               trace_id: row.trace_id,
               parent_span_id: row.parent_span_id,
               span_type: row.span_type,
-              span_name: row.span_name
+              span_name: row.span_name,
+              execution_order: row.execution_order,
+              state_snapshot: row.state_snapshot,
+              reasoning_text: row.reasoning_text,
+              duration_breakdown: row.duration_breakdown
             }));
             setTraceSpans(mapped);
             // Focus on root or first node
@@ -362,15 +417,32 @@ export default function TraceList({ traces, projectId, initialSearch }: TraceLis
                         )}
                       </td>
                       <td className="p-4 pr-6 text-right">
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleSelectTrace(trace);
-                          }}
-                          className="text-[11px] text-zinc-400 hover:text-zinc-100 font-semibold transition-colors"
-                        >
-                          View details →
-                        </button>
+                        <div className="flex items-center justify-end gap-3.5">
+                          {loadingReplay === trace.id ? (
+                            <span className="text-[10px] font-mono text-zinc-550 animate-pulse">
+                              Loading...
+                            </span>
+                          ) : trace.trace_id ? (
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenReplay(trace);
+                              }}
+                              className="text-[11.5px] text-emerald-500 hover:text-emerald-400 font-semibold transition-colors flex items-center gap-1"
+                            >
+                              <span>▶</span> Replay
+                            </button>
+                          ) : null}
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSelectTrace(trace);
+                            }}
+                            className="text-[11px] text-zinc-400 hover:text-zinc-100 font-semibold transition-colors"
+                          >
+                            View details →
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -400,14 +472,28 @@ export default function TraceList({ traces, projectId, initialSearch }: TraceLis
                   Trace ID: {selectedTrace.trace_id || 'Legacy Flat Trace'}
                 </p>
               </div>
-              <button 
-                onClick={() => setSelectedTrace(null)}
-                className="p-1.5 text-zinc-500 hover:text-zinc-200 transition-colors"
-              >
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
+              <div className="flex items-center gap-3">
+                {selectedTrace.trace_id && (
+                  <button
+                    onClick={() => {
+                      setReplayTraceSpans(traceSpans);
+                      setReplayTraceId(selectedTrace.trace_id!);
+                      setShowReplay(true);
+                    }}
+                    className="px-3 py-1 bg-zinc-850 hover:bg-zinc-800 text-zinc-200 text-xs font-semibold rounded-md border border-zinc-700/60 flex items-center gap-1.5 transition-colors"
+                  >
+                    <span>▶</span> Run Replay
+                  </button>
+                )}
+                <button 
+                  onClick={() => setSelectedTrace(null)}
+                  className="p-1.5 text-zinc-500 hover:text-zinc-200 transition-colors"
+                >
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
             </div>
 
             {/* Split Content Area */}
@@ -552,6 +638,19 @@ export default function TraceList({ traces, projectId, initialSearch }: TraceLis
             </div>
           </div>
         </div>
+      )}
+
+      {showReplay && replayTraceSpans && replayTraceId && (
+        <ReplayViewer
+          projectId={projectId}
+          traceId={replayTraceId}
+          spans={replayTraceSpans}
+          onClose={() => {
+            setShowReplay(false);
+            setReplayTraceSpans(null);
+            setReplayTraceId(null);
+          }}
+        />
       )}
     </div>
   );

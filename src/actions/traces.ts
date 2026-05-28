@@ -14,7 +14,8 @@ export async function searchTraces(projectId: string, searchTerm: string = '', l
           id, created_at, provider, model, latency_ms, cost_usd, 
           error_message, is_cached, prompt_tokens, completion_tokens,
           request_payload, response_payload, trace_id, parent_span_id,
-          span_type, span_name
+          span_type, span_name, execution_order, state_snapshot,
+          reasoning_text, duration_breakdown
         FROM events 
         WHERE project_id = $1 
         ORDER BY created_at DESC 
@@ -28,7 +29,8 @@ export async function searchTraces(projectId: string, searchTerm: string = '', l
         id, created_at, provider, model, latency_ms, cost_usd, 
         error_message, is_cached, prompt_tokens, completion_tokens,
         request_payload, response_payload, trace_id, parent_span_id,
-        span_type, span_name
+        span_type, span_name, execution_order, state_snapshot,
+        reasoning_text, duration_breakdown
       FROM events 
       WHERE project_id = $1 
         AND to_tsvector('english', COALESCE(request_payload::text, '') || ' ' || COALESCE(response_payload::text, '')) 
@@ -47,10 +49,11 @@ export async function getTraceTree(projectId: string, traceId: string) {
         id, created_at, provider, model, latency_ms, cost_usd, 
         error_message, is_cached, prompt_tokens, completion_tokens,
         request_payload, response_payload, trace_id, parent_span_id,
-        span_type, span_name
+        span_type, span_name, execution_order, state_snapshot,
+        reasoning_text, duration_breakdown
       FROM events 
       WHERE project_id = $1 AND trace_id = $2
-      ORDER BY created_at ASC
+      ORDER BY execution_order ASC, created_at ASC
     `, [projectId, traceId]);
   });
 }

@@ -10,7 +10,7 @@ import urllib.request
 import urllib.error
 
 class Span:
-    def __init__(self, sdk, name, span_type="llm", trace_id=None, parent_span_id=None):
+    def __init__(self, sdk, name, span_type="llm", trace_id=None, parent_span_id=None, execution_counter=None):
         self.sdk = sdk
         self.name = name
         self.type = span_type
@@ -19,9 +19,32 @@ class Span:
         self.parent_span_id = parent_span_id
         self.start_time = time.time()
         self.ended = False
+        self._state_snapshot = None
+        self._reasoning_text = None
+        self._duration_breakdown = None
+
+        if execution_counter is None:
+            self.execution_counter = [0]
+        else:
+            self.execution_counter = execution_counter
+        
+        self.execution_order = self.execution_counter[0]
+        self.execution_counter[0] += 1
 
     def span(self, name, span_type="llm"):
-        return Span(self.sdk, name, span_type=span_type, trace_id=self.trace_id, parent_span_id=self.id)
+        return Span(self.sdk, name, span_type=span_type, trace_id=self.trace_id, parent_span_id=self.id, execution_counter=self.execution_counter)
+
+    def capture_state(self, state_dict):
+        self._state_snapshot = state_dict
+        return self
+
+    def reasoning(self, text):
+        self._reasoning_text = text
+        return self
+
+    def duration_breakdown(self, breakdown):
+        self._duration_breakdown = breakdown
+        return self
 
     def track(self, **data):
         event = {
@@ -32,7 +55,15 @@ class Span:
             "span_name": self.name,
             "provider": data.get("provider", "unknown"),
             "model": data.get("model", "unknown"),
+            "execution_order": self.execution_order,
         }
+        if self._state_snapshot is not None:
+            event["state_snapshot"] = self._state_snapshot
+        if self._reasoning_text is not None:
+            event["reasoning_text"] = self._reasoning_text
+        if self._duration_breakdown is not None:
+            event["duration_breakdown"] = self._duration_breakdown
+
         event.update(data)
         self.sdk.track(event)
 
