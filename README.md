@@ -1,74 +1,57 @@
-# LLMWatch: State-of-the-Art LLM Observability & Multi-Agent Tracing
+# GuiltTrip: The Multi-Agent Observability Engine Born Out of Founder Holiday Guilt
 
-Traditional application performance monitoring (APM) tools are built around linear, flat request-response cycles. These models fail when applied to complex, stateful, multi-agent LLM systems. When agents recursively invoke other agents, spawn intermediate tool calls, fork execution paths, or get stuck in circular wait deadlock loops, flat log viewers cannot provide the necessary context.
+## Why Does This Exist? (The Founder's Confession)
 
-LLMWatch is a production-grade LLM observability platform engineered specifically for tracking, debugging, and profiling agentic runs. It provides developers with step-by-step trace replay capabilities, interactive execution DAG flow diagrams, context waste profiling, split-pane state mutation diffs, and distributed deadlock detection across agent execution boundaries.
+This project is the direct result of holiday guilt. As a full-time semiconductor founder, taking a day off felt like a crime. The anxiety of "if you stop running, you fail" kicked in, leading to a state of holiday-induced depression. 
 
----
-
-## System Architecture
-
-The LLMWatch platform is composed of five core architectural layers, designed for low latency, secure tenant isolation, and high availability.
-
-### 1. Telemetry & SDK Layer
-The Python and TypeScript SDKs intercept model execution pipelines. They wrap API calls (such as OpenAI completions), profiling duration, cost, and tokens.
-*   **Span Hierarchy**: The SDK dynamically creates Span contexts using UUID v4. Spans carry parent-child mapping variables (`trace_id`, `parent_span_id`) which are automatically inherited by nested blocks (e.g. chains calling tools).
-*   **Asynchronous Buffered Queue**: Telemetry events are queued locally and flushed in batches using thread-safe daemon worker threads. This prevents network latency overhead in the main application loop. It features exponential backoff retries (1s, 2s, capped at 8s) to handle network interruptions.
-*   **Local Caching**: Deterministic hashing of prompt input keys is used to query remote caches, enabling zero-cost cache hit telemetry tracking.
-
-### 2. Ingestion Backend
-Built on Next.js Edge Routes, the ingestion API endpoint (/api/public/v1/events) accepts batched event arrays.
-*   **Secure API Key Authentication**: Projects authenticate via incoming API keys, which are hashed using SHA-256 and matched against db keys to enforce tenant isolation and monthly usage quotas.
-*   **Decoupled Processing**: Next.js `after()` execution context executes database writes, token pricing lookups, and anomaly detection checks asynchronously after the HTTP 202 Accepted response has been sent to the SDK.
-*   **Dead Letter Queue (DLQ)**: Telemetry batches containing invalid structures or SQL insertion failures are captured and logged to the `ingestion_dead_letter` table for post-mortem debugging.
-
-### 3. Data Storage Layer
-Uses Neon Serverless PostgreSQL to store traces, spans, anomalies, projects, and api keys.
-*   **Schema Design**: The database schema uses relational constraints, cascades, and composite indexes to query complex nested hierarchies.
-*   **Full-Text Search Indexing**: Request and response payloads are indexed via a PostgreSQL GIN index, enabling full-text searches across raw JSON telemetry fields using `websearch_to_tsquery`.
-
-### 4. Background Anomaly Scanner
-A background post-ingestion scanner analyzes incoming traces in real-time. It flags traces matching specific anomaly signatures:
-*   **Cost Explosions**: Total trace cost exceeding 0.10 USD.
-*   **Recursive Loops**: Duplicate tool or chain spans appearing more than 5 times in a single trace, indicating loop failures.
-*   **Retry Storms**: Repeated failed calls to external APIs or databases.
-*   **Latency Outliers**: Active LLM execution spans exceeding 2000ms and 3x the project average.
-
-### 5. Web Inspection Interface
-Built with Next.js Server Components, Client Components, and Server Actions.
-*   **Direct Server Actions**: Actions handle database queries with user authentication and workspace authorization checks.
-*   **SVG Rendering Canvas**: Custom SVG coordinates math dynamically positions nodes horizontally in execution DAGs and workflow dependency maps, drawing animated data flow lines and curved edges.
-*   **Recursive Diff trees**: Client-side tree algorithms compare nested JSON configurations, highlighting added, removed, or changed values.
+To break the loop and spike some dopamine before starting the work week, this project was built. It’s called **GuiltTrip** (abbreviated as `gt`). Because taking a trip is what caused the guilt, and tracing the execution "trips" of chaotic, recursive agentic loops is what solved it.
 
 ---
 
-## Development Phases
+## What is GuiltTrip?
 
-LLMWatch was developed in ten sequential phases to ensure structural stability:
+GuiltTrip is an observability and tracing engine built specifically for hierarchical, stateful, and multi-agent LLM architectures. 
 
-*   **Phase 1: Basic Tracing & Cost Profiling Core**: Nested span telemetry schema, Cost-per-1k-tokens mapping across different LLM providers (OpenAI, Anthropic, etc.), and duration tracking.
-*   **Phase 2: Project Management & API Authentication**: Multi-project database isolation, secure key validation using SHA-256 key hashing, and tenant usage quota enforcement.
-*   **Phase 3: Real-Time Ingestion Backend**: Bulk event handler API routes, database schema migrations, and local/production environment setups.
-*   **Phase 4: Inspection Dashboard & Tree Inspector**: Next.js dashboard layout, interactive tree viewer showing span execution hierarchy, and full-text JSON payload search.
-*   **Phase 5: Step-Through Replay Engine**: Sequence order indexing on spans, timeline playback slider controls, and intermediate agent reasoning extraction.
-*   **Phase 6: Interactive Execution DAG & Latency Flamegraphs**: Relative timeline flamegraph offsets, canvas grid coordinates logic, and animated SVG flow paths.
-*   **Phase 7: Context Flow & RAG Optimization**: HSL-mapped token source charts, cumulative growth line charts, and context-waste optimization thresholds.
-*   **Phase 8: Anomaly Scanners & Alerts**: Real-time scanners run post-ingestion inside `after()` hooks, flagging infinite loops, cost outliers, and retry storms.
-*   **Phase 9: State Snapshot Timeline & Compare Diff Inspector**: Split-pane JSON recursive diff trees, state mutations timeline, and fork checkpoint simulation command builders.
-*   **Phase 10: Multi-Agent Correlation & Deadlock Detection**: Distributed workflow correlation using a `workflow_id` context, SVG agent dependency graphs, and server-side DFS cycle-detection path builders to isolate deadlocks.
+### For the Noob (The 10-Second Pitch)
+Imagine your AI agents are a group of hyperactive interns working on a project. They talk to each other, hand off tasks, write notes in shared folders, and sometimes get stuck waiting on each other forever. 
+GuiltTrip is the security camera and manager. It lets you watch exactly who said what, when they said it, how much it cost you, and rings an alarm if two interns get stuck in a loop waiting on each other.
+
+### For the 30-Year Veteran (The Architecture Breakdown)
+Traditional APMs assume flat request-response workflows. GuiltTrip is designed for nested, stateful call graphs:
+*   **Context Propagation**: It enforces parent-child span boundaries across distributed traces using a unified `workflow_id` and unique `Span` coordinates.
+*   **Asynchronous Edge Ingestion**: Telemetry payloads are ingested via Edge Routes, authenticated via SHA-256 key matches, and written asynchronously using Next.js `after()` workers. Malformed payloads are routed to a Dead Letter Queue (DLQ).
+*   **DFS Deadlock Detection**: A server-side depth-first search (DFS) algorithm traces cross-agent edges to identify circular waits (cycles) in real-time.
+*   **State Snapshot Diffing**: Mutated variables are versioned, letting you view side-by-side recursive JSON diffs and dry-run fork replays.
 
 ---
 
-## System Requirements & Local Setup
+## How It Works: The 10 Phases of GuiltTrip
+
+The platform was built in ten iterative phases:
+
+*   **Phase 1: Spans & Latency Profiling**: Designed the hierarchical database schema and cost parsing algorithms across AI providers.
+*   **Phase 2: Tenant Isolation**: Secure API key authentication using SHA-256 signatures and monthly usage quota limits.
+*   **Phase 3: Event Ingestion & DLQ**: A bulk-event Edge handler route with a database Dead Letter Queue (DLQ) for malformed payloads.
+*   **Phase 4: Inspection Dashboard**: Responsive dark-mode interface with a nested tree viewer and GIN-indexed full-text JSON search.
+*   **Phase 5: Playback Replay Engine**: Sequence order tracking with interactive slider controls to step through execution logs.
+*   **Phase 6: SVG DAG & Latency Flamegraphs**: Visualizing execution paths using dynamic SVGs and heatmaps.
+*   **Phase 7: Token Flow & RAG Profiling**: Token distribution flow charts and context-waste highlights (e.g. huge prompts yielding 2-word outputs).
+*   **Phase 8: Post-Ingestion Anomaly Scanners**: Background scanners check for loops (> 5 duplicate runs), cost outliers, and retry storms.
+*   **Phase 9: State Diff Timeline**: Side-by-side JSON diffs comparing trace check-points, with fork replay simulators.
+*   **Phase 10: Multi-Agent Correlation & Deadlock Finder**: Grouping cross-trace agents, plotting agent dependency graphs, and highlighting circular loops in glowing red.
+
+---
+
+## Local Setup
 
 ### Prerequisites
 *   Node.js (v18 or higher)
-*   PostgreSQL Database (Neon Serverless Postgres recommended)
-*   Python (v3.8 or higher) for verification script execution
+*   PostgreSQL (Neon Serverless Postgres recommended)
+*   Python (v3.8 or higher) for verification seeding
 
-### Local Installation
+### Installation & Run
 
-1. Clone the repository and install npm packages:
+1. Clone and install packages:
    ```bash
    git clone https://github.com/MithunVimalan/llm-watch.git
    cd llm-watch
@@ -82,12 +65,12 @@ LLMWatch was developed in ten sequential phases to ensure structural stability:
    CRON_SECRET="your-cron-auth-secret-key"
    ```
 
-3. Run database migrations to build tables, columns, indexes, and seed records:
+3. Run database migrations:
    ```bash
    node migrate-local.js
    ```
 
-4. Start the local Next.js development server:
+4. Start the Next.js development server:
    ```bash
    npm run dev
    ```
@@ -97,54 +80,36 @@ LLMWatch was developed in ten sequential phases to ensure structural stability:
 
 ## Verification & Seeding
 
-We have provided several Python scripts in the root directory to generate trace data and test specific features. Run them to seed your database:
+Run the Python scripts in the root directory to populate your database with workflow and deadlock data:
 
-*   **State Snapshots & Replays**:
-    ```bash
-    python test-replay.py
-    ```
-*   **Token Flow & Waste Profiles**:
-    ```bash
-    python test-token-flow.py
-    ```
-*   **Loop & Cost Anomalies**:
-    ```bash
-    python test-anomalies.py
-    ```
-*   **Coordinated Agents & Deadlocks**:
-    ```bash
-    python test-multi-agent.py
-    ```
+*   **State Replays**: `python test-replay.py`
+*   **Token Flow**: `python test-token-flow.py`
+*   **Anomalies**: `python test-anomalies.py`
+*   **Multi-Agent Deadlocks**: `python test-multi-agent.py`
 
 ---
 
-## Production Deployment Guide
-
-Deploy LLMWatch to a production server in under five minutes using the Vercel CLI.
+## Production Deployment
 
 ### Prerequisites
-1.  A Vercel account.
-2.  A production PostgreSQL instance.
-3.  Vercel CLI installed globally (`npm install -g vercel`).
+*   Vercel CLI installed globally (`npm install -g vercel`).
+*   A remote PostgreSQL database.
 
-### Deployment Steps
+### Deployment Commands
 
-1.  Log in to Vercel and link your repository:
-    ```bash
-    vercel login
-    vercel link
-    ```
-2.  Add production environment variables:
-    ```bash
-    vercel env add DATABASE_URL
-    vercel env add CRON_SECRET
-    ```
-3.  Run migrations on your production database. Edit your local `DATABASE_URL` temporarily to point to the production database and run:
-    ```bash
-    node migrate-local.js
-    ```
-4.  Compile and deploy your production build:
-    ```bash
-    vercel --prod
-    ```
-    This command outputs your live dashboard URL (e.g. `https://llmwatch.vercel.app`). Update your SDK endpoints to target `https://your-domain.vercel.app/api/public/v1/events`.
+1. Link your repository to Vercel:
+   ```bash
+   vercel login
+   vercel link
+   ```
+2. Configure remote environment variables:
+   ```bash
+   vercel env add DATABASE_URL
+   vercel env add CRON_SECRET
+   ```
+3. Run migrations on your production database (temporarily configure your local env `DATABASE_URL` to point to production and run `node migrate-local.js`).
+4. Build and deploy to production:
+   ```bash
+   vercel --prod
+   ```
+   Update your SDK endpoints to target `https://your-domain.vercel.app/api/public/v1/events`.
